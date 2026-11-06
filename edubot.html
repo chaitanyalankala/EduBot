@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EduBot – AI Study Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------- Design tokens ---------- */
+:root{
+  --ink:#080c2a; --deep:#141a4a; --violet:#7c5cff; --sky:#4cc9f0; --mint:#3ddc97; --rose:#ff6b8a;
+  --text:#eaf0ff; --muted:#9aa6d6;
+  --glass:rgba(255,255,255,.07); --glass-edge:rgba(255,255,255,.14);
+  --radius:20px;
+  --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{
+  font-family:var(--font); color:var(--text); display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(1200px 700px at 15% 10%,#2a2f8f 0%,transparent 60%),
+             radial-gradient(900px 600px at 90% 90%,#5a2d9c 0%,transparent 60%),var(--ink);
+  padding:16px; overflow:hidden;
+}
+/* soft floating orbs behind the glass */
+body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(80px);z-index:0;opacity:.45}
+body::before{width:320px;height:320px;background:var(--violet);top:-80px;right:10%}
+body::after{width:280px;height:280px;background:var(--sky);bottom:-80px;left:8%}
+
+/* ---------- Chat shell ---------- */
+.app{
+  position:relative; z-index:1; width:100%; max-width:860px; height:min(880px,100%);
+  display:flex; flex-direction:column; overflow:hidden;
+  background:var(--glass); border:1px solid var(--glass-edge); border-radius:28px;
+  backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+  box-shadow:0 30px 80px rgba(0,0,0,.45);
+}
+header{display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid var(--glass-edge);
+  padding-top:max(16px,env(safe-area-inset-top))}
+.logo{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:22px;
+  background:linear-gradient(135deg,var(--violet),var(--sky));box-shadow:0 6px 18px rgba(124,92,255,.5)}
+header h1{font-size:1.15rem;font-weight:700;letter-spacing:-.01em}
+header p{font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+header p::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 8px var(--mint)}
+
+/* ---------- Messages ---------- */
+#messages{flex:1;overflow-y:auto;padding:22px;display:flex;flex-direction:column;gap:16px;scroll-behavior:smooth}
+#messages::-webkit-scrollbar{width:6px}
+#messages::-webkit-scrollbar-thumb{background:var(--glass-edge);border-radius:6px}
+.row{display:flex;gap:10px;align-items:flex-end;max-width:88%;animation:rise .45s cubic-bezier(.2,.8,.2,1) both}
+.row.user{align-self:flex-end;flex-direction:row-reverse}
+@keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.avatar{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:16px;font-weight:600}
+.bot .avatar{background:linear-gradient(135deg,var(--violet),var(--sky))}
+.user .avatar{background:linear-gradient(135deg,#ff8a5c,var(--rose));font-size:13px}
+.bubble{padding:12px 16px;border-radius:var(--radius);line-height:1.55;font-size:.95rem;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);overflow-wrap:anywhere}
+.bot .bubble{background:rgba(255,255,255,.1);border:1px solid var(--glass-edge);border-bottom-left-radius:6px}
+.user .bubble{background:linear-gradient(135deg,var(--violet),#5b6cff);border-bottom-right-radius:6px}
+.bubble p+p{margin-top:8px}
+.bubble a{color:var(--sky);font-weight:500}
+.bubble code{background:rgba(0,0,0,.35);padding:2px 6px;border-radius:6px;font-size:.85em}
+.bubble pre{background:rgba(0,0,0,.4);padding:10px 12px;border-radius:12px;margin-top:8px;overflow-x:auto;font-size:.85em}
+.bubble ul{padding-left:18px;margin-top:6px}
+
+/* ---------- Typing indicator ---------- */
+.dots{display:flex;gap:5px;padding:4px 2px;align-items:center}
+.dots span{width:8px;height:8px;border-radius:50%;background:var(--sky);animation:bounce 1.1s infinite ease-in-out}
+.dots span:nth-child(2){animation-delay:.15s}.dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-7px);opacity:1}}
+.typing-label{font-size:.72rem;color:var(--muted);margin-top:4px}
+
+/* ---------- Buttons: chips, quiz options, actions ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip,.opt,.act{
+  font:inherit;font-size:.85rem;font-weight:500;color:var(--text);cursor:pointer;
+  background:rgba(124,92,255,.18);border:1px solid rgba(124,92,255,.5);border-radius:999px;padding:8px 14px;
+  transition:transform .18s,background .18s,box-shadow .18s,border-color .18s}
+.chip:hover,.act:hover{background:var(--violet);transform:translateY(-2px);box-shadow:0 8px 18px rgba(124,92,255,.45)}
+.opt{display:block;width:100%;text-align:left;border-radius:14px;padding:11px 14px;margin-top:8px;background:rgba(255,255,255,.07);border-color:var(--glass-edge)}
+.opt:hover:not(:disabled){background:rgba(76,201,240,.2);border-color:var(--sky);transform:translateX(4px)}
+.opt:disabled{cursor:default}
+.opt.correct{background:rgba(61,220,151,.25);border-color:var(--mint)}
+.opt.wrong{background:rgba(255,107,138,.25);border-color:var(--rose)}
+.opt.dim{opacity:.5}
+button:focus-visible,input:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+.qmeta{font-size:.75rem;color:var(--muted);margin-bottom:6px}
+.bar{height:8px;border-radius:8px;background:rgba(255,255,255,.12);overflow:hidden;margin:4px 0 10px}
+.bar i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,var(--violet),var(--mint));transition:width .8s}
+
+/* ---------- Footer / input ---------- */
+.quick{display:flex;gap:8px;padding:10px 22px 0;overflow-x:auto;scrollbar-width:none}
+.quick::-webkit-scrollbar{display:none}
+.act{flex:none;border-radius:999px;background:var(--glass);border-color:var(--glass-edge)}
+form{display:flex;gap:10px;padding:14px 22px;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+input{flex:1;min-width:0;font:inherit;color:var(--text);background:rgba(0,0,0,.28);border:1px solid var(--glass-edge);
+  border-radius:999px;padding:13px 20px;transition:border-color .2s,box-shadow .2s}
+input::placeholder{color:var(--muted)}
+input:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 4px rgba(124,92,255,.25)}
+.send{flex:none;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;font-size:18px;color:#fff;
+  background:linear-gradient(135deg,var(--violet),var(--sky));transition:transform .18s,box-shadow .18s}
+.send:hover{transform:scale(1.08) rotate(-8deg);box-shadow:0 8px 22px rgba(124,92,255,.55)}
+
+/* ---------- Responsive ---------- */
+@media (max-width:640px){
+  body{padding:0}
+  .app{border-radius:0;height:100dvh;max-width:none;border:0}
+  #messages{padding:14px}.row{max-width:96%}
+  header,form,.quick{padding-left:14px;padding-right:14px}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <div class="logo">🎓</div>
+    <div><h1>EduBot</h1><p>Your AI study assistant</p></div>
+  </header>
+  <section id="messages" aria-live="polite"></section>
+  <div class="quick" id="quick"></div>
+  <form id="form" autocomplete="off">
+    <input id="input" type="text" placeholder="Ask about HTML, CSS, JS, Python or AI…" aria-label="Type your question">
+    <button class="send" type="submit" aria-label="Send">➤</button>
+  </form>
+</main>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   1. KNOWLEDGE REPRESENTATION
+   Each concept is a node in a small semantic network:
+   - keywords: weighted terms (features used by the matcher)
+   - related:  edges to other concepts (used for "explore next" links)
+   - resources / quiz: attached learning material and assessment items
+   ===================================================================== */
+const KB = {
+  html:{ name:"HTML", icon:"🧱",
+    keywords:{html:3,tag:2,element:1.5,markup:2,semantic:2,doctype:2,anchor:1.5,heading:1.5,attribute:1.5,webpage:1.5,structure:1,link:1,image:1,form:1},
+    answer:"<p><b>HTML</b> (HyperText Markup Language) defines the <i>structure</i> of a web page using elements written as tags.</p><pre>&lt;h1&gt;Hello&lt;/h1&gt;\n&lt;a href=\"/about\"&gt;About&lt;/a&gt;</pre><p>Use semantic tags like <code>&lt;header&gt;</code>, <code>&lt;nav&gt;</code> and <code>&lt;main&gt;</code> so browsers and screen readers understand your content.</p>",
+    related:["css","js"],
+    resources:[["MDN: Learn HTML","https://developer.mozilla.org/en-US/docs/Learn/HTML"],["freeCodeCamp: Responsive Web Design","https://www.freecodecamp.org/learn/2022/responsive-web-design/"]],
+    quiz:[
+      {q:"Which tag creates the largest heading?",o:["<h6>","<h1>","<head>","<title>"],a:1,why:"<h1> is the top-level heading."},
+      {q:"Which attribute sets the destination of a link?",o:["src","href","alt","target"],a:1,why:"<a href=\"…\"> holds the link URL."},
+      {q:"What does HTML stand for?",o:["HyperText Markup Language","High Tech Modern Language","HyperTool Multi Language","Home Text Markup Level"],a:0,why:"It is HyperText Markup Language."}]},
+  css:{ name:"CSS", icon:"🎨",
+    keywords:{css:3,style:2,styling:2,color:1.5,layout:1.5,flexbox:2.5,grid:2,selector:2,margin:1.5,padding:1.5,font:1,animation:1.5,responsive:1.5,design:1},
+    answer:"<p><b>CSS</b> (Cascading Style Sheets) controls how HTML looks: colors, fonts, spacing and layout.</p><pre>.card {\n  display: flex;\n  border-radius: 12px;\n}</pre><p>Learn the box model, then <b>Flexbox</b> and <b>Grid</b> for layout, and media queries for responsive design.</p>",
+    related:["html","js"],
+    resources:[["MDN: Learn CSS","https://developer.mozilla.org/en-US/docs/Learn/CSS"],["CSS-Tricks: Flexbox guide","https://css-tricks.com/snippets/css/a-guide-to-flexbox/"]],
+    quiz:[
+      {q:"Which property changes text color?",o:["font-color","text-style","color","fgcolor"],a:2,why:"The color property sets text color."},
+      {q:"Which display value enables Flexbox?",o:["block","flex","inline","table"],a:1,why:"display:flex turns an element into a flex container."},
+      {q:"In the box model, what sits between content and border?",o:["Margin","Outline","Padding","Gap"],a:2,why:"Padding is inside the border; margin is outside."}]},
+  js:{ name:"JavaScript", icon:"⚡",
+    keywords:{javascript:3,js:3,variable:1.5,function:1.5,dom:2.5,event:1.5,array:1.5,promise:2,async:2,const:2,let:1.5,closure:2,browser:1,node:1.5,script:1.5},
+    answer:"<p><b>JavaScript</b> makes web pages interactive. It runs in the browser (and on servers via Node.js).</p><pre>const greet = name =&gt; `Hi ${name}!`;\ndocument.title = greet('Sam');</pre><p>Key ideas: variables (<code>let</code>/<code>const</code>), functions, the DOM, events, and asynchronous code with Promises.</p>",
+    related:["html","python"],
+    resources:[["MDN: JavaScript Guide","https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide"],["javascript.info","https://javascript.info/"]],
+    quiz:[
+      {q:"Which keyword declares a constant?",o:["var","let","const","def"],a:2,why:"const declares a binding that cannot be reassigned."},
+      {q:"What does DOM stand for?",o:["Data Object Model","Document Object Model","Digital Order Map","Document Oriented Markup"],a:1,why:"The Document Object Model represents the page as objects."},
+      {q:"Which method adds an item to the end of an array?",o:["push()","pop()","shift()","add()"],a:0,why:"push() appends; pop() removes the last item."}]},
+  python:{ name:"Python", icon:"🐍",
+    keywords:{python:3,py:2,def:2,list:1.5,dictionary:2,dict:2,loop:1.5,indent:2,pip:2,tuple:2,pandas:2,numpy:2,import:1.5,variable:1,function:1},
+    answer:"<p><b>Python</b> is a beginner-friendly language known for readable syntax. It is used for web apps, automation, data science and AI.</p><pre>def square(n):\n    return n * n\n\nprint([square(i) for i in range(5)])</pre><p>Start with variables, lists, dictionaries, loops and functions.</p>",
+    related:["ai","js"],
+    resources:[["Python Official Tutorial","https://docs.python.org/3/tutorial/"],["Automate the Boring Stuff","https://automatetheboringstuff.com/"]],
+    quiz:[
+      {q:"Which keyword defines a function in Python?",o:["function","fun","def","lambda only"],a:2,why:"Functions start with def."},
+      {q:"Which structure stores key–value pairs?",o:["list","tuple","set","dictionary"],a:3,why:"Dictionaries map keys to values."},
+      {q:"How does Python mark code blocks?",o:["Curly braces","Indentation","BEGIN/END","Semicolons"],a:1,why:"Indentation defines blocks."}]},
+  ai:{ name:"AI", icon:"🤖",
+    keywords:{ai:3,"artificial":2.5,intelligence:2.5,machine:2,learning:2,ml:3,neural:2.5,network:1.5,model:1.5,training:2,data:1,deep:1.5,chatbot:2,algorithm:1.5,nlp:2.5},
+    answer:"<p><b>Artificial Intelligence</b> is the field of building systems that perform tasks needing human-like intelligence.</p><ul><li><b>Machine learning</b>: models learn patterns from data instead of fixed rules.</li><li><b>Deep learning</b>: layered neural networks for images, speech and text.</li><li><b>NLP</b>: lets computers work with language, like this chatbot.</li></ul>",
+    related:["python","js"],
+    resources:[["Elements of AI (free course)","https://www.elementsofai.com/"],["Google ML Crash Course","https://developers.google.com/machine-learning/crash-course"]],
+    quiz:[
+      {q:"What is machine learning?",o:["Hand-coding every rule","Learning patterns from data","A type of hardware","A database"],a:1,why:"ML models learn patterns from examples."},
+      {q:"Which language is most common for AI work?",o:["Python","HTML","CSS","SQL only"],a:0,why:"Python has the richest ML ecosystem."},
+      {q:"What do we call data used to teach a model?",o:["Test noise","Training data","Output","Cache"],a:1,why:"Training data is what the model learns from."}]}
+};
+
+/* =====================================================================
+   2. LOGIC LAYER: lightweight ML-style retrieval + learner model
+   - Tokenise, stem, and fuzzy-match words against weighted keywords.
+   - Weights are scaled by an IDF-style term (rare keywords count more).
+   - A learner model tracks mastery per topic to personalise advice.
+   ===================================================================== */
+const Logic = (() => {
+  const stem = w => w.replace(/(ing|ed|es|s)$/,"");
+  const tokens = t => t.toLowerCase().replace(/[^a-z0-9+#\s]/g," ").split(/\s+/).filter(Boolean);
+
+  // Edit distance (typo tolerance) – returns true if within 1 edit
+  function close(a,b){
+    if(Math.abs(a.length-b.length)>1||a.length<5) return false;
+    let i=0,j=0,e=0;
+    while(i<a.length&&j<b.length){
+      if(a[i]===b[j]){i++;j++;continue}
+      if(++e>1) return false;
+      if(a.length>b.length) i++; else if(a.length<b.length) j++; else {i++;j++}
+    }
+    return e+(a.length-i)+(b.length-j)<=1;
+  }
+
+  // IDF-style rarity: keywords shared by many topics are down-weighted
+  const df = {};
+  Object.values(KB).forEach(t=>Object.keys(t.keywords).forEach(k=>df[k]=(df[k]||0)+1));
+  const idf = k => 1+Math.log(Object.keys(KB).length/df[k])*0.5;
+
+  /** Score every topic for a text; returns [{id,score}] sorted high→low */
+  function rank(text){
+    const toks = tokens(text);
+    return Object.entries(KB).map(([id,t])=>{
+      let score=0;
+      toks.forEach(tok=>{
+        for(const [kw,w] of Object.entries(t.keywords)){
+          if(tok===kw||stem(tok)===stem(kw)) score+=w*idf(kw);
+          else if(close(tok,kw)) score+=w*idf(kw)*0.6;
+        }
+      });
+      return {id,score};
+    }).sort((a,b)=>b.score-a.score);
+  }
+
+  const best = text => { const r=rank(text); return r[0].score>=1.5 ? r[0].id : null; };
+
+  /** Rule-based intent detection for non-subject commands */
+  function intent(text){
+    const t=text.toLowerCase();
+    if(/^(hi|hello|hey|yo|good (morning|evening|afternoon))\b/.test(t)) return "greet";
+    if(/\b(thanks|thank you|thx)\b/.test(t)) return "thanks";
+    if(/\b(stop|quit|cancel|exit)\b/.test(t)) return "stop";
+    if(/\b(quiz|test me|assess|assessment|exam|practice)\b/.test(t)) return "quiz";
+    if(/\b(resource|resources|tutorial|link|links|material|course|learn more|where can i learn)\b/.test(t)) return "resources";
+    if(/\b(progress|score|mastery|how am i doing)\b/.test(t)) return "progress";
+    if(/\b(help|what can you do)\b/.test(t)) return "help";
+    return "ask";
+  }
+
+  /* Learner model: exponential moving average of quiz accuracy per topic */
+  const mastery = {}; // id -> 0..1
+  function record(id,accuracy){ mastery[id] = mastery[id]==null ? accuracy : 0.5*mastery[id]+0.5*accuracy; }
+  function weakest(){
+    const seen = Object.entries(mastery).sort((a,b)=>a[1]-b[1]);
+    if(seen.length) return seen[0][0];
+    return null;
+  }
+  return {rank,best,intent,mastery,record,weakest};
+})();
+
+/* =====================================================================
+   3. UI LAYER – DOM only, no business logic
+   ===================================================================== */
+const UI = (() => {
+  const box = document.getElementById("messages");
+  const scroll = () => box.scrollTo({top:box.scrollHeight,behavior:"smooth"});
+  const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+  function row(role){
+    const r=document.createElement("div"); r.className="row "+role;
+    r.innerHTML=`<div class="avatar">${role==="bot"?"🎓":"You"}</div><div class="bubble"></div>`;
+    box.appendChild(r); scroll(); return r.querySelector(".bubble");
+  }
+  const addUser = text => { row("user").textContent=text; };
+  function addBot(html){ const b=row("bot"); b.innerHTML=html; return b; }
+
+  /** Show bouncing dots for 1–2 s, then remove */
+  async function typing(){
+    const b=row("bot");
+    b.innerHTML='<div class="dots"><span></span><span></span><span></span></div><div class="typing-label">EduBot is typing…</div>';
+    const holder=b.closest(".row");
+    await sleep(1000+Math.random()*1000);
+    holder.remove();
+  }
+
+  /** Append a row of clickable chips to a bubble */
+  function chips(bubble,items){
+    const wrap=document.createElement("div"); wrap.className="chips";
+    items.forEach(([label,fn])=>{
+      const c=document.createElement("button"); c.type="button"; c.className="chip"; c.textContent=label;
+      c.onclick=fn; wrap.appendChild(c);
+    });
+    bubble.appendChild(wrap); scroll();
+  }
+
+  function quickBar(items){
+    const q=document.getElementById("quick");
+    items.forEach(([label,fn])=>{
+      const b=document.createElement("button"); b.type="button"; b.className="act"; b.textContent=label; b.onclick=fn; q.appendChild(b);
+    });
+  }
+  return {addUser,addBot,typing,chips,quickBar,scroll,sleep};
+})();
+
+/* =====================================================================
+   4. QUIZ MODULE – owns quiz state, renders inline buttons
+   ===================================================================== */
+const Quiz = (() => {
+  let s = null; // {topic, i, score, locked}
+
+  const active = () => !!s;
+  const cancel = () => { s=null; };
+
+  async function start(topic){
+    s={topic,i:0,score:0,locked:false};
+    await UI.typing();
+    UI.addBot(`Great, let's test your <b>${KB[topic].name}</b> knowledge. ${KB[topic].quiz.length} questions, tap an answer to respond.`);
+    await UI.sleep(400);
+    ask();
+  }
+
+  function ask(){
+    const item=KB[s.topic].quiz[s.i], total=KB[s.topic].quiz.length;
+    const b=UI.addBot(`<div class="qmeta">Question ${s.i+1} of ${total} · Score ${s.score}</div><b>${item.q.replace(/</g,"&lt;")}</b>`);
+    item.o.forEach((text,idx)=>{
+      const btn=document.createElement("button"); btn.type="button"; btn.className="opt"; btn.textContent=text;
+      btn.onclick=()=>answer(idx,b); b.appendChild(btn);
+    });
+    UI.scroll();
+  }
+
+  async function answer(idx,bubble){
+    if(!s||s.locked) return; s.locked=true;
+    const item=KB[s.topic].quiz[s.i], opts=[...bubble.querySelectorAll(".opt")];
+    opts.forEach((o,k)=>{ o.disabled=true; if(k===item.a) o.classList.add("correct"); else if(k===idx) o.classList.add("wrong"); else o.classList.add("dim"); });
+    const ok = idx===item.a; if(ok) s.score++;
+    await UI.sleep(500);
+    UI.addBot((ok?"✅ <b>Correct!</b> ":"❌ <b>Not quite.</b> ")+item.why.replace(/</g,"&lt;"));
+    s.i++; s.locked=false;
+    await UI.sleep(700);
+    if(s.i<KB[s.topic].quiz.length){ await UI.typing(); ask(); } else finish();
+  }
+
+  async function finish(){
+    const {topic,score}=s, total=KB[topic].quiz.length, pct=Math.round(score/total*100);
+    Logic.record(topic,score/total); s=null;
+    await UI.typing();
+    const verdict = pct===100?"Perfect score! 🎉":pct>=60?"Nice work, you're getting there 👏":"Good start. A bit more practice will help 💪";
+    const b=UI.addBot(`<b>Quiz complete: ${score}/${total} (${pct}%)</b><div class="bar"><i style="width:0"></i></div>${verdict}`);
+    requestAnimationFrame(()=>setTimeout(()=>b.querySelector(".bar i").style.width=pct+"%",50));
+    UI.chips(b,[
+      ["Retake quiz",()=>Bot.send("quiz "+topic,true)],
+      ["Study resources",()=>Bot.send("resources "+topic,true)],
+      ["Try another topic",()=>Bot.send("quiz",true)]
+    ]);
+  }
+  return {start,active,cancel};
+})();
+
+/* =====================================================================
+   5. CONTROLLER – connects input → logic → UI
+   ===================================================================== */
+const Bot = (() => {
+  const topicChips = fn => Object.entries(KB).map(([id,t])=>[`${t.icon} ${t.name}`,()=>fn(id)]);
+  const say = async (html,chipItems) => { await UI.typing(); const b=UI.addBot(html); if(chipItems) UI.chips(b,chipItems); };
+
+  async function showAnswer(id){
+    const t=KB[id];
+    await say(t.answer,[
+      ["📝 Quiz me",()=>send("quiz "+id,true)],
+      ["📚 Resources",()=>send("resources "+id,true)],
+      ...t.related.map(r=>[`Explore ${KB[r].name}`,()=>send("what is "+KB[r].name,true)])
+    ]);
+  }
+
+  async function showResources(id){
+    if(!id) return say("Which subject do you want resources for?",topicChips(showResources));
+    const list=KB[id].resources.map(([n,u])=>`<li><a href="${u}" target="_blank" rel="noopener">${n}</a></li>`).join("");
+    await say(`Here are good places to learn <b>${KB[id].name}</b>:<ul>${list}</ul>`,[["📝 Quiz me",()=>send("quiz "+id,true)]]);
+  }
+
+  async function showProgress(){
+    const entries=Object.entries(Logic.mastery);
+    if(!entries.length) return say("You haven't taken a quiz yet. Take one and I'll track your mastery per topic.",[["Start a quiz",()=>send("quiz",true)]]);
+    const bars=entries.map(([id,m])=>`<div>${KB[id].icon} ${KB[id].name}: <b>${Math.round(m*100)}%</b><div class="bar"><i style="width:${m*100}%"></i></div></div>`).join("");
+    const w=Logic.weakest();
+    await say(`<b>Your mastery</b>${bars}Suggested focus: <b>${KB[w].name}</b>.`,[[`Practice ${KB[w].name}`,()=>Quiz.start(w)]]);
+  }
+
+  async function startQuiz(id){
+    if(!id) return say("Pick a subject for your quiz:",topicChips(startQuiz));
+    Quiz.start(id);
+  }
+
+  /** Main entry: handle one user message */
+  async function send(text,fromChip=false){
+    text=text.trim(); if(!text) return;
+    UI.addUser(text);
+    const intent=Logic.intent(text), topic=Logic.best(text);
+
+    if(Quiz.active()){
+      if(intent==="stop"){ Quiz.cancel(); return say("Quiz stopped. Your progress so far isn't scored.",topicChips(showAnswer)); }
+      return say("Choose one of the answer buttons above to continue, or type <b>stop</b> to quit the quiz.");
+    }
+    switch(intent){
+      case "greet": return say("Hi! I'm <b>EduBot</b>. I can explain concepts, share learning resources and run quick quizzes. What would you like to explore?",topicChips(showAnswer));
+      case "thanks": return say("You're welcome! Want to test what you've learned?",[["📝 Take a quiz",()=>send("quiz",true)]]);
+      case "help": return say("I can:<ul><li>Explain HTML, CSS, JavaScript, Python and AI</li><li>Share study resources</li><li>Run quizzes and track your mastery</li></ul>Try “What is Flexbox?” or tap a subject.",topicChips(showAnswer));
+      case "stop": return say("Nothing is running right now. What would you like to learn?",topicChips(showAnswer));
+      case "quiz": return startQuiz(topic);
+      case "resources": return showResources(topic);
+      case "progress": return showProgress();
+    }
+    if(topic) return showAnswer(topic);
+
+    // Fallback: graceful suggestions
+    await say("I don't have an answer for that yet. Try asking about one of these:",topicChips(showAnswer));
+  }
+
+  function init(){
+    const form=document.getElementById("form"), input=document.getElementById("input");
+    form.addEventListener("submit",e=>{ e.preventDefault(); const v=input.value; input.value=""; send(v); });
+    UI.quickBar([["📝 Start quiz",()=>send("quiz",true)],["📚 Resources",()=>send("resources",true)],["📈 My progress",()=>send("progress",true)],["❓ Help",()=>send("help",true)]]);
+    say("👋 Welcome! I'm <b>EduBot</b>, your study companion. Ask me a question or pick a subject to begin.",topicChips(showAnswer));
+  }
+  return {init,send};
+})();
+
+document.addEventListener("DOMContentLoaded",Bot.init);
+</script>
+</body>
+</html>
